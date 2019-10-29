@@ -130,27 +130,25 @@ class ModelHagan:
         '''
         texp = self.texp if(texp is None) else texp
         forward = spot * np.exp(texp*(self.intr - self.divr))
-        _vol = np.zeros(3)
-        if(is_vola):
-            _vola = price_or_vola3                     
+        vol = np.zeros(3)
+        if(is_vol):
+            vol = price_or_vol3                     
         else:
-            _price = price_or_vola3
-            _vola[0] = self.bsm_model.impvol(_price[0], strike3[0], spot, texp, cp_sign= cp_sign)
-            _vola[1] = self.bsm_model.impvol(_price[1], strike3[1], spot, texp, cp_sign= cp_sign)
-            _vola[2] = self.bsm_model.impvol(_price[2], strike3[2], spot, texp, cp_sign= cp_sign)
-            
+            price = price_or_vola3
+            for i in range(0,3):
+                vol[i] = self.bsm_model.impvol(price[i], strike3[i], spot, texp, cp_sign= cp_sign)
         def fun(x):
-            return [bsm_vol(strike3[0], forward, texp, x[0], x[1], x[2])-_vol[0],
-                  bsm_vol(strike3[1], forward, texp, x[0], x[1], x[2])-_vol[1],
-                  bsm_vol(strike3[2], forward, texp, x[0], x[1], x[2])-_vol[2]]
+            return [bsm_vol(strike3[0], forward, texp, x[0], x[1], x[2])-vol[0],
+                  bsm_vol(strike3[1], forward, texp, x[0], x[1], x[2])-vol[1],
+                  bsm_vol(strike3[2], forward, texp, x[0], x[1], x[2])-vol[2]]
         
-        fin = sopt.root(fun,[2,2,0.3],method='hybr') 
+        root = sopt.root(fun,[1.2,0.8,0.2],method='hybr') 
      
         if(setval):
-            self.sigma = sol.x[0]
-            self.alpha = sol.x[1]
-            self.rho  = sol.x[2]
-        return fin.x
+            self.sigma = root.x[0]
+            self.alpha = root.x[1]
+            self.rho  = root.x[2]
+        return root.x
 '''
 Hagan model class for beta=0
 '''
@@ -201,28 +199,27 @@ class ModelNormalHagan:
         '''
         texp = self.texp if(texp is None) else texp
         forward = spot * np.exp(texp*(self.intr - self.divr))
-        _vol = np.zeros(3)
+        vol = np.zeros(3)
         if(is_vola):
-            _vola = price_or_vol3                     
+            vol = price_or_vol3                     
         else:
-            _price = price_or_vol3
-            _vola[0] = self.normal_model.impvol(_price[0], strike3[0], spot, texp, cp_sign= cp_sign)
-            _vola[1] = self.normal_model.impvol(_price[1], strike3[1], spot, texp, cp_sign= cp_sign)
-            _vola[2] = self.normal_model.impvol(_price[2], strike3[2], spot, texp, cp_sign= cp_sign)
+            price = price_or_vol3
+            for i in range(0,3):
+                vol[i] = self.bsm_model.impvol(price[i], strike3[i], spot, texp, cp_sign= cp_sign)
             
         def fun(x):
-            return [norm_vol(strike3[0], forward, texp, x[0], x[1], x[2])-_vol[0],
-                  norm_vol(strike3[1], forward, texp, x[0], x[1], x[2])-_vol[1],
-                  norm_vol(strike3[2], forward, texp, x[0], x[1], x[2])-_vol[2]]
+            return [norm_vol(strike3[0], forward, texp, x[0], x[1], x[2])-vol[0],
+                  norm_vol(strike3[1], forward, texp, x[0], x[1], x[2])-vol[1],
+                  norm_vol(strike3[2], forward, texp, x[0], x[1], x[2])-vol[2]]
         
-        fin = sopt.root(fun,[10,10,0.1],method='hybr') 
+        root = sopt.root(fun,[1.2,0.8,0.2],method='hybr') 
      
         if(setval):
-            self.sigma = sol.x[0]
-            self.alpha = sol.x[1]
-            self.rho  = sol.x[2]
+            self.sigma = root.x[0]
+            self.alpha = root.x[1]
+            self.rho  = root.x[2]
             
-        return fin.x # sigma, alpha, rho
+        return root.x # sigma, alpha, rho
 
 '''
 MC model class for Beta=1
@@ -232,6 +229,8 @@ class ModelBsmMC:
     alpha, rho = 0.0, 0.0
     texp, sigma, intr, divr = None, None, None, None
     bsm_model = None
+    timestep = 100
+    n_sample = 1000
     '''
     You may define more members for MC: time step, etc
     '''
@@ -254,36 +253,34 @@ class ModelBsmMC:
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         price = self.price(strike, spot, texp, sigma)
-        impvol = np.zeros(len(strike))
-        for i in range(len(strike)):
-            impvol[i] = self.normal_model.impvol(price[i], strike[i], spot, texp)
+        impvol = self.bsm_model.impvol(price, strike, spot, texp)
             
         return impvol
         
     
-    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1):
+    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1,seed=True):
         '''
         Your MC routine goes here
         Generate paths for vol and price first. Then get prices (vector) for all strikes
         You may fix the random number seed
         '''
-        if(fix_seed):
-            np.random.seed(1234)
+        if(seed):
+            np.random.seed(12345)
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         z1 = np.random.normal(size=(self.n_sample,self.timestep))
         z2 = np.random.normal(size=(self.n_sample,self.timestep))
         w1 = self.rho*z1+np.sqrt(1-self.rho**2)*z2
-        vol_path = self.sigma*np.ones((self.n_sample,self.timestep+1))
-        price_path = spot*np.ones((self.n_sample,self.timestep+1))
+        vol = np.ones((self.n_sample,self.timestep+1))
+        price = spot*np.ones((self.n_sample,self.timestep+1))
                            
         delta_t = texp/self.timestep
         vol_ratio = np.exp(self.alpha*np.sqrt(delta_t)*z1-0.5*self.alpha**2*delta_t)
-        vol_path[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
-        delta_p = vol_path[:,:-1]*w1*np.sqrt(delta_t)
-        price_path[:,1:] = spot+np.cumsum(delta_p,axis=1)
+        vol[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
+        price_ratio = np.exp(vol[:,:-1]*np.sqrt(delta_t)*w1-0.5*vol[:,:-1]**2*delta_t)
+        price[:,1:] = spot*np.cumprod(price_ratio,axis=1)
         
-        price = np.mean(np.fmax(cp_sign*(price_path[:,-1].reshape(self.n_sample,1)-strike),0),0)
+        price = np.mean(np.maximum(cp_sign*(price[:,-1].reshape(self.n_sample,1)-strike),0),0)
                                    
         
         
@@ -298,6 +295,8 @@ class ModelNormalMC:
     alpha, rho = 0.0, 0.0
     texp, sigma, intr, divr = None, None, None, None
     normal_model = None
+    timestep = 100
+    n_sample = 1000
     
     def __init__(self, texp, sigma, alpha=0, rho=0.0, beta=0.0, intr=0, divr=0):
         self.texp = texp
@@ -317,39 +316,39 @@ class ModelNormalMC:
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         price = self.price(strike, spot, texp, sigma)
-        impvol = np.zeros(len(strike))
-        for i in range(len(strike)):
-            impvol[i] = self.bsm_model.impvol(price[i], strike[i], spot, texp)
+        impvol = self.normal_model.impvol(price, strike, spot, texp)
             
         return impvol
         
-    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1):
+        
+    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1,seed = True):
         '''
         Your MC routine goes here
         Generate paths for vol and price first. Then get prices (vector) for all strikes
         You may fix the random number seed
         '''
-        if(fix_seed):
-            np.random.seed(1234)
+        if(seed):
+            np.random.seed(23456)
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         z1 = np.random.normal(size=(self.n_sample,self.timestep))
         z2 = np.random.normal(size=(self.n_sample,self.timestep))
         w1 = self.rho*z1+np.sqrt(1-self.rho**2)*z2
-        vol_path = self.sigma*np.ones((self.n_sample,self.timestep+1))
-        price_path = spot*np.ones((self.n_sample,self.timestep+1))
+        vol = self.sigma*np.ones((self.n_sample,self.timestep+1))
+        price = spot*np.ones((self.n_sample,self.timestep+1))
                            
         delta_t = texp/self.timestep
         vol_ratio = np.exp(self.alpha*np.sqrt(delta_t)*z1-0.5*self.alpha**2*delta_t)
-        vol_path[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
-        ratio_p = np.exp(vol_path[:,:-1]*np.sqrt(delta_t)*w1-0.5*vol_path[:,:-1]**2*delta_t)
-        price_path[:,1:] = spot*np.cumprod(ratio_p,axis=1)
+        vol[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
+        delta_p = vol[:,:-1]*w1*np.sqrt(delta_t)
+        price[:,1:] = spot+np.cumsum(delta_p,axis=1)
         
-        price = np.mean(np.fmax(cp_sign*(price_path[:,-1].reshape(self.n_sample,1)-strike),0),0)
+        price = np.mean(np.maximum(cp_sign*(price[:,-1].reshape(self.n_sample,1)-strike),0),0)
                                    
         
         
-        return price
+        return price                       
+
 
 '''
 Conditional MC model class for Beta=1
@@ -359,6 +358,8 @@ class ModelBsmCondMC:
     alpha, rho = 0.0, 0.0
     texp, sigma, intr, divr = None, None, None, None
     bsm_model = None
+    timestep = 100
+    n_sample = 1000
     '''
     You may define more members for MC: time step, etc
     '''
@@ -382,36 +383,34 @@ class ModelBsmCondMC:
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         price = self.price(strike, spot, texp, sigma)
-        impvol = np.zeros(len(strike))
-        for i in range(len(strike)):
-            impvol[i] = self.bsm_model.impvol(price[i], strike[i], spot, texp)
+        impvol = self.bsm_model.impvol(price, strike, spot, texp)
             
         return impvol
     
-    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1):
+    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1,seed=True):
         '''
         Your MC routine goes here
         Generate paths for vol only. Then compute integrated variance and BSM price.
         Then get prices (vector) for all strikes
         You may fix the random number seed
         '''
-        if(fix_seed):
-            np.random.seed(1234)                
+        if(seed):
+            np.random.seed(34567)                
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
-        simpson_coef = np.ones(self.timestep+1)
+        simpson = np.ones(self.timestep+1)
         z1 = np.random.normal(size=(self.n_sample,self.timestep))
         z2 = np.random.normal(size=(self.n_sample,self.timestep))
         w1 = self.rho*z1+np.sqrt(1-self.rho**2)*z2
-        vol_path = self.sigma*np.ones((self.n_sample,self.timestep+1))
+        vol = self.sigma*np.ones((self.n_sample,self.timestep+1))
         delta_t = texp/self.timestep
         vol_ratio = np.exp(self.alpha*np.sqrt(delta_t)*z1-0.5*self.alpha**2*delta_t)
-        vol_path[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
-        simpson_coef[1:-2] = np.tile(np.array([4,2]),int(self.timestep/2-1))
-        simpson_coef[-2] = 4
-        I_var = np.sum(simpson_coef*vol_path**2*1/3*delta_t,axis=1)
-        s_con = spot*np.exp(self.rho/self.alpha*(vol_path[:,-1]-vol_path[:,0])-self.rho**2/2*I_var).reshape(self.n_sample,1)
-        vol_con = np.sqrt((1-self.rho**2)*I_var/texp).reshape(self.n_sample,1)
+        vol[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
+        simpson[1:-2] = np.tile(np.array([4,2]),int(self.timestep/2-1))
+        simpson[-2] = 4
+        I = np.sum(simpson*vol**2*1/3*delta_t,axis=1)
+        s_con = spot*np.exp(self.rho/self.alpha*(vol[:,-1]-vol[:,0])-self.rho**2/2*I).reshape(self.n_sample,1)
+        vol_con = np.sqrt((1-self.rho**2)*I/texp).reshape(self.n_sample,1)
         
         price = np.mean(self.bsm_model.price(strike, s_con, texp, vol_con, cp_sign=cp_sign),0)
 
@@ -426,6 +425,8 @@ class ModelNormalCondMC:
     alpha, rho = 0.0, 0.0
     texp, sigma, intr, divr = None, None, None, None
     normal_model = None
+    timestep = 100
+    n_sample = 1000
     
     def __init__(self, texp, sigma, alpha=0, rho=0.0, beta=0.0, intr=0, divr=0):
         self.texp = texp
@@ -446,37 +447,33 @@ class ModelNormalCondMC:
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
         price = self.price(strike, spot, texp, sigma)
-        impvol = np.zeros(len(strike))
-        for i in range(len(strike)):
-            impvol[i] = self.normal_model.impvol(price[i], strike[i], spot, texp)
-            
+        impvol = self.normal_model.impvol(price, strike, spot, texp)
         return impvol
         
-    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1):
+    def price(self, strike, spot, texp=None, sigma=None, cp_sign=1,seed=True):
         '''
         Your MC routine goes here
         Generate paths for vol only. Then compute integrated variance and normal price.
         You may fix the random number seed
         '''
-        if(fix_seed):
-            np.random.seed(1234)
+        if(seed):
+            np.random.seed(45678)
         sigma = self.sigma if(sigma is None) else sigma
         texp = self.texp if(texp is None) else texp
-        simpson_coef = np.ones(self.timestep+1)
+        simpson = np.ones(self.timestep+1)
         z1 = np.random.normal(size=(self.n_sample,self.timestep))
         z2 = np.random.normal(size=(self.n_sample,self.timestep))
         w1 = self.rho*z1+np.sqrt(1-self.rho**2)*z2
-        vol_path = self.sigma*np.ones((self.n_sample,self.timestep+1))
+        vol= self.sigma*np.ones((self.n_sample,self.timestep+1))
         delta_t = texp/self.timestep
         vol_ratio = np.exp(self.alpha*np.sqrt(delta_t)*z1-0.5*self.alpha**2*delta_t)
-        vol_path[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
-        simpson_coef[1:-2] = np.tile(np.array([4,2]),int(self.timestep/2-1))
-        simpson_coef[-2] = 4
-        I_var = np.sum(simpson_coef*vol_path**2*1/3*delta_t,axis=1)
-        s_con = (spot+self.rho/self.alpha*(vol_path[:,-1]-vol_path[:,0])).reshape(self.n_sample,1)
-        vol_con = np.sqrt((1-self.rho**2)*I_var/texp).reshape(self.n_sample,1)
+        vol[:,1:] = sigma*np.cumprod(vol_ratio,axis=1)
+        simpson[1:-2] = np.tile(np.array([4,2]),int(self.timestep/2-1))
+        simpson[-2] = 4
+        I = np.sum(simpson*vol**2*1/3*delta_t,axis=1)
+        s_con = (spot+self.rho/self.alpha*(vol[:,-1]-vol[:,0])).reshape(self.n_sample,1)
+        vol_con = np.sqrt((1-self.rho**2)*I/texp).reshape(self.n_sample,1)
         
         price = np.mean(self.normal_model.price(strike, s_con, texp, vol_con, cp_sign=cp_sign),0)
                         
         return price
-        return 0
