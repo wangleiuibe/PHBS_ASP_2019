@@ -134,7 +134,7 @@ class ModelHagan:
         if(is_vol):
             vol = price_or_vol3                     
         else:
-            price = price_or_vola3
+            price = price_or_vol3
             for i in range(0,3):
                 vol[i] = self.bsm_model.impvol(price[i], strike3[i], spot, texp, cp_sign= cp_sign)
         def fun(x):
@@ -200,12 +200,12 @@ class ModelNormalHagan:
         texp = self.texp if(texp is None) else texp
         forward = spot * np.exp(texp*(self.intr - self.divr))
         vol = np.zeros(3)
-        if(is_vola):
+        if(is_vol):
             vol = price_or_vol3                     
         else:
             price = price_or_vol3
             for i in range(0,3):
-                vol[i] = self.bsm_model.impvol(price[i], strike3[i], spot, texp, cp_sign= cp_sign)
+                vol[i] = self.normal_model.impvol(price[i], strike3[i], spot, texp, cp_sign= cp_sign)
             
         def fun(x):
             return [norm_vol(strike3[0], forward, texp, x[0], x[1], x[2])-vol[0],
